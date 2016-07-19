@@ -36,7 +36,7 @@ void setup()
   sensors.setResolution(10);
 
   // START OTA ROUTINE
-  ArduinoOTA.setHostname("esp8266-HVAC");
+  ArduinoOTA.setHostname("esp8266-Node04");
 
   ArduinoOTA.onStart([]() {
     Serial.println("Start");
