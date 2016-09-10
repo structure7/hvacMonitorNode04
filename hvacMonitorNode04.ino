@@ -1,3 +1,8 @@
+/* Node04 responsibilities:
+ * - Send SparkFun attic, bdrm, KK, LK, outside, and tstat temps (picked up by analog.io) every minute.
+ * - Reports MK's bedroom temperature.
+ */
+
 #include <SimpleTimer.h>
 #define BLYNK_PRINT Serial    // Comment this out to disable prints and save space
 #include <ESP8266WiFi.h>
@@ -145,6 +150,20 @@ void sendTemps()
   {
     Blynk.virtualWrite(31, "ERR");
   }
+
+  if (tempMK < 78) // Changes the color of the app's temperature readout based on temperature
+  {
+    Blynk.setProperty(V31, "color", "#04C0F8"); // Blue
+  }
+  else if (tempMK >= 78 && tempMK <= 80)
+  {
+    Blynk.setProperty(V31, "color", "#ED9D00"); // Yellow
+  }
+  else if (tempMK > 80)
+  {
+    Blynk.setProperty(V31, "color", "#D3435C"); // Red
+  }
+  
 }
 
 // START SPARKFUN UPDATE/REPORT PROCESS
