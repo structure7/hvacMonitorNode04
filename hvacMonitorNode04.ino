@@ -1,7 +1,7 @@
 /* Node04 responsibilities:
- * - Send SparkFun attic, bdrm, KK, LK, outside, and tstat temps (picked up by analog.io) every minute.
- * - Reports MK's bedroom temperature.
- */
+   - Send SparkFun attic, bdrm, KK, LK, outside, and tstat temps (picked up by analog.io) every minute.
+   - Reports MK's bedroom temperature.
+*/
 
 #include <SimpleTimer.h>
 #define BLYNK_PRINT Serial    // Comment this out to disable prints and save space
@@ -21,20 +21,19 @@ DallasTemperature sensors(&oneWire);
 #include <ArduinoOTA.h>         // Required for OTA
 
 float tempMK;              // Room temp
-bool sfSendFlag;           // Locks out sparkfun restart until complete
+bool sfSendFlag;
 int atticTemp, bdrmTemp, keatonTemp, livTemp, outsideTemp, outsideTempPrev;
 double tstatTemp;
 int getWait = 2000;       // Duration to wait between syncs from Blynk
 
 char auth[] = "fromBlynkApp";
+char ssid[] = "ssid";
+char pass[] = "pw";
 
-// Sparkfun server
-const char* hostSF = "data.sparkfun.com";
-const char* streamId   = "publicKey";
-const char* privateKey = "privateKey";
-
-const char* ssid = "ssid";
-const char* pw = "pw";
+// All sparkfun updates now handled by Blynk's WebHook widget
+//const char* hostSF = "data.sparkfun.com";
+//const char* streamId   = "publicKey";
+//const char* privateKey = "privateKey";
 
 SimpleTimer timer;
 WidgetTerminal terminal(V26);     //Uptime reporting
@@ -44,7 +43,7 @@ BLYNK_ATTACH_WIDGET(rtc, V8);
 void setup()
 {
   Serial.begin(9600);
-  Blynk.begin(auth, ssid, pw);
+  Blynk.begin(auth, ssid, pass);
 
   while (Blynk.connect() == false) {
     // Wait until connected
@@ -163,7 +162,7 @@ void sendTemps()
   {
     Blynk.setProperty(V31, "color", "#D3435C"); // Red
   }
-  
+
 }
 
 // START SPARKFUN UPDATE/REPORT PROCESS
@@ -176,7 +175,6 @@ void sfSync1() {
 BLYNK_WRITE(V7) {
   atticTemp = param.asInt();
 }
-
 
 void sfSync2() {
   Blynk.syncVirtual(V4);
@@ -229,42 +227,7 @@ BLYNK_WRITE(V3) {
 
 void sfSend()
 {
-  Serial.print("connecting to ");
-  Serial.println(hostSF);
-
-  // Use WiFiClient class to create TCP connections
-  WiFiClient client;
-  const int httpPort = 80;
-  if (!client.connect(hostSF, httpPort)) {
-    Serial.println("connection failed");
-    sfSendFlag = 0;
-    return;
-  }
-
-  Serial.print("Requesting...");
-
-  // This will send the request to the server
-  client.print(String("GET ") + "/input/" + streamId + "?private_key=" + privateKey + "&attic=" + atticTemp + "&bdrm=" + tempMK + "&keaton=" + keatonTemp + "&liv=" + livTemp + "&outside=" + outsideTemp + "&tstat=" + tstatTemp + " HTTP/1.1\r\n" +
-               "Host: " + hostSF + "\r\n" +
-               "Connection: close\r\n\r\n");
-  unsigned long timeout = millis();
-  while (client.available() == 0) {
-    if (millis() - timeout > 15000) {
-      Serial.println(">>> Client Timeout !");
-      sfSendFlag = 0;                                  // Trying this in hopes it will allow a restart in the event of timeout/failure.
-      client.stop();
-      return;
-    }
-  }
-
-  // Read all the lines of the reply from server and print them to Serial
-  while (client.available()) {
-    String line = client.readStringUntil('\r');
-    Serial.print(line);
-  }
-
-  Serial.println();
-  Serial.println("closing connection");
+  Blynk.virtualWrite(68, String("attic=") + atticTemp + "&bdrm=" + tempMK + "&keaton=" + keatonTemp + "&liv=" + livTemp + "&outside=" + outsideTemp + "&tstat=" + tstatTemp);
 
   sfSendFlag = 0;
 }
