@@ -20,20 +20,25 @@ DallasTemperature sensors(&oneWire);
 #include <WiFiUdp.h>            // Required for OTA
 #include <ArduinoOTA.h>         // Required for OTA
 
-float tempMK;              // Room temp
-bool sfSendFlag;
-int atticTemp, bdrmTemp, keatonTemp, livTemp, outsideTemp, outsideTempPrev;
-double tstatTemp;
+float tempMK;              // Bedroom temp
+int tempMKint;
+bool phantSendFlag;
+double tstatTemp, atticTemp, keatonTemp, livTemp, outsideTemp, outsideTempPrev;
+int atticTempError, tempMKError, keatonTempError, livTempError, outsideTempError, tstatTempError;
+
+int last24high, last24low;    // Rolling high/low temps in last 24-hours.
+int last24hoursTemps[288];    // Last 24-hours temps recorded every 5 minutes.
+int arrayIndex = 0;
+
 int getWait = 2000;       // Duration to wait between syncs from Blynk
 
 char auth[] = "fromBlynkApp";
 char ssid[] = "ssid";
 char pass[] = "pw";
 
-// All sparkfun updates now handled by Blynk's WebHook widget
-//const char* hostSF = "data.sparkfun.com";
-//const char* streamId   = "publicKey";
-//const char* privateKey = "privateKey";
+char* hostSF = "raspi";
+char* streamId   = "publicKey";
+char* privateKey = "privateKey";
 
 SimpleTimer timer;
 WidgetTerminal terminal(V26);     //Uptime reporting
@@ -86,6 +91,8 @@ void setup()
 
   timer.setInterval(2000L, sendTemps);    // Temperature sensor polling interval
   timer.setInterval(1000L, uptimeReport);
+  timer.setInterval(300000L, recordTempToArray);  // Array updated ~5 minutes
+  timer.setTimeout(5000, setupArray);             // Sets entire array to temp at startup for a "baseline"
 }
 
 void loop()
@@ -94,10 +101,15 @@ void loop()
   timer.run();
   ArduinoOTA.handle();
 
-  if (second() == 35 && sfSendFlag == 0)
+  if (second() == 35 && phantSendFlag == 0)
   {
-    sfSendFlag = 1;
+    phantSendFlag = 1;
     sfSync1();
+  }
+
+  if (second() == 0 && phantSendFlag == 1)  // Bails out the routine if there's an error in Phant send.
+  {
+    phantSendFlag = 0;
   }
 }
 
@@ -141,6 +153,18 @@ void sendTemps()
 
   tempMK = sensors.getTempFByIndex(0); // Gets first probe on wire in lieu of by address
 
+  // Conversion of tempMK to tempMKint
+  int xMKint = (int) tempMK;
+  double xMK10ths = (tempMK - xMKint);
+  if (xMK10ths >= .50)
+  {
+    tempMKint = (xMKint + 1);
+  }
+  else
+  {
+    tempMKint = xMKint;
+  }
+
   if (tempMK > 0)
   {
     Blynk.virtualWrite(31, tempMK);
@@ -173,7 +197,7 @@ void sfSync1() {
 }
 
 BLYNK_WRITE(V7) {
-  atticTemp = param.asInt();
+  atticTemp = param.asDouble();
 }
 
 void sfSync2() {
@@ -182,7 +206,7 @@ void sfSync2() {
 }
 
 BLYNK_WRITE(V4) {
-  keatonTemp = param.asInt();
+  keatonTemp = param.asDouble();
 }
 
 
@@ -192,42 +216,115 @@ void sfSync3() {
 }
 
 BLYNK_WRITE(V6) {
-  livTemp = param.asInt();
+  livTemp = param.asDouble();
 }
 
 
 void sfSync4() {
   Blynk.syncVirtual(V12);
 
-  // This is to screen out API errors of 0 degrees from being reported & messing up graph scale.
-  outsideTempPrev = outsideTemp;
-
-  if (outsideTemp = 0)
+  if (outsideTemp <= 0)
   {
     outsideTemp = outsideTempPrev;
+  }
+  else
+  {
+    outsideTempPrev = outsideTemp;
   }
 
   timer.setTimeout(getWait, sfSync5);
 }
 
 BLYNK_WRITE(V12) {
-  outsideTemp = param.asInt();
+  outsideTemp = param.asDouble();
 }
 
 
 void sfSync5() {
   Blynk.syncVirtual(V3);
-  timer.setTimeout(getWait, sfSend);
+  timer.setTimeout(getWait, phantSend);
 }
 
 BLYNK_WRITE(V3) {
   tstatTemp = param.asDouble();
 }
 
-
-void sfSend()
+void phantSend()
 {
-  Blynk.virtualWrite(68, String("attic=") + atticTemp + "&bdrm=" + tempMK + "&keaton=" + keatonTemp + "&liv=" + livTemp + "&outside=" + outsideTemp + "&tstat=" + tstatTemp);
+  //Blynk.virtualWrite(68, String("attic=") + atticTemp + "&bdrm=" + tempMK + "&keaton=" + keatonTemp + "&liv=" + livTemp + "&outside=" + outsideTemp + "&tstat=" + tstatTemp);
 
-  sfSendFlag = 0;
+  Serial.print("connecting to ");
+  Serial.println(hostSF);
+
+  // Use WiFiClient class to create TCP connections
+  WiFiClient client;
+  const int httpPort = 8080;
+  if (!client.connect(hostSF, httpPort)) {
+    Serial.println("connection failed");
+    return;
+  }
+
+  Serial.print("Requesting...");
+
+  // This will send the request to the server
+  client.print(String("GET ") + "/input/" + streamId + "?private_key=" + privateKey + "&attic=" + atticTemp + "&bdrm=" + tempMK + "&keaton=" + keatonTemp + "&liv=" + livTemp + "&outside=" + outsideTemp + "&tstat=" + tstatTemp + " HTTP/1.1\r\n" +
+               "Host: " + hostSF + "\r\n" +
+               "Connection: close\r\n\r\n");
+  unsigned long timeout = millis();
+  while (client.available() == 0) {
+    if (millis() - timeout > 15000) {
+      Serial.println(">>> Client Timeout !");
+      client.stop();
+      return;
+    }
+  }
+
+  // Read all the lines of the reply from server and print them to Serial
+  while (client.available()) {
+    String line = client.readStringUntil('\r');
+    Serial.print(line);
+  }
+
+  Serial.println();
+  Serial.println("closing connection");
+
+  phantSendFlag = 0;
+}
+
+void setupArray()
+{
+  for (int i = 0; i < 289; i++)
+  {
+    last24hoursTemps[i] = tempMKint;
+  }
+
+  Blynk.setProperty(V31, "label", "MBDRM");
+}
+
+void recordTempToArray()
+{
+  if (arrayIndex < 289)                   // Mess with array size and timing to taste!
+  {
+    last24hoursTemps[arrayIndex] = tempMKint;
+    ++arrayIndex;
+  }
+  else
+  {
+    arrayIndex = 0;
+  }
+
+  for (int i = 0; i < 289; i++)
+  {
+    if (last24hoursTemps[i] > last24high)
+    {
+      last24high = last24hoursTemps[i];
+    }
+
+    if (last24hoursTemps[i] < last24low)
+    {
+      last24low = last24hoursTemps[i];
+    }
+  }
+
+  Blynk.setProperty(V31, "label", String("MBDRM ") + last24high + "/" + last24low);  // Sets label with high/low temps.
 }
