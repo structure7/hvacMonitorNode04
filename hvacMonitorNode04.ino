@@ -1,5 +1,5 @@
 /* Node04 responsibilities:
-   - Send SparkFun attic, bdrm, KK, LK, outside, and tstat temps (picked up by analog.io) every minute.
+   - Send local Phant server the attic, bdrm, KK, LK, outside, and tstat temps (picked up by analog.io) every minute.
    - Reports MK's bedroom temperature.
 */
 
@@ -25,6 +25,9 @@ int tempMKint;
 bool phantSendFlag;
 double tstatTemp, atticTemp, keatonTemp, livTemp, outsideTemp, outsideTempPrev;
 int atticTempError, tempMKError, keatonTempError, livTempError, outsideTempError, tstatTempError;
+
+int dailyHigh = 0;
+int dailyLow = 200;
 
 int last24high, last24low;    // Rolling high/low temps in last 24-hours.
 int last24hoursTemps[288];    // Last 24-hours temps recorded every 5 minutes.
@@ -60,7 +63,7 @@ void setup()
   sensors.setResolution(10);
 
   // START OTA ROUTINE
-  ArduinoOTA.setHostname("esp8266-Node04MK");
+  ArduinoOTA.setHostname("Node04MK-ESP01");
 
   ArduinoOTA.onStart([]() {
     Serial.println("Start");
@@ -91,7 +94,7 @@ void setup()
 
   timer.setInterval(2000L, sendTemps);    // Temperature sensor polling interval
   timer.setInterval(1000L, uptimeReport);
-  timer.setInterval(300000L, recordTempToArray);  // Array updated ~5 minutes
+  timer.setInterval(300000L, recordHighLowTemps);  // Array updated ~5 minutes
   timer.setTimeout(5000, setupArray);             // Sets entire array to temp at startup for a "baseline"
 }
 
@@ -110,6 +113,11 @@ void loop()
   if (second() == 0 && phantSendFlag == 1)  // Bails out the routine if there's an error in Phant send.
   {
     phantSendFlag = 0;
+  }
+
+    if (hour() == 00 && minute() == 01)
+  {
+    timer.setTimeout(61000, resetHiLoTemps);
   }
 }
 
@@ -209,7 +217,6 @@ BLYNK_WRITE(V4) {
   keatonTemp = param.asDouble();
 }
 
-
 void sfSync3() {
   Blynk.syncVirtual(V6);
   timer.setTimeout(getWait, sfSync4);
@@ -218,7 +225,6 @@ void sfSync3() {
 BLYNK_WRITE(V6) {
   livTemp = param.asDouble();
 }
-
 
 void sfSync4() {
   Blynk.syncVirtual(V12);
@@ -239,7 +245,6 @@ BLYNK_WRITE(V12) {
   outsideTemp = param.asDouble();
 }
 
-
 void sfSync5() {
   Blynk.syncVirtual(V3);
   timer.setTimeout(getWait, phantSend);
@@ -251,8 +256,6 @@ BLYNK_WRITE(V3) {
 
 void phantSend()
 {
-  //Blynk.virtualWrite(68, String("attic=") + atticTemp + "&bdrm=" + tempMK + "&keaton=" + keatonTemp + "&liv=" + livTemp + "&outside=" + outsideTemp + "&tstat=" + tstatTemp);
-
   Serial.print("connecting to ");
   Serial.println(hostSF);
 
@@ -293,17 +296,20 @@ void phantSend()
 
 void setupArray()
 {
-  for (int i = 0; i < 289; i++)
+  for (int i = 0; i < 288; i++)
   {
     last24hoursTemps[i] = tempMKint;
   }
 
+  last24high = tempMKint;
+  last24low = tempMKint;
+
   Blynk.setProperty(V31, "label", "MBDRM");
 }
 
-void recordTempToArray()
+void recordHighLowTemps()
 {
-  if (arrayIndex < 289)                   // Mess with array size and timing to taste!
+  if (arrayIndex < 288)                   // Mess with array size and timing to taste!
   {
     last24hoursTemps[arrayIndex] = tempMKint;
     ++arrayIndex;
@@ -311,9 +317,14 @@ void recordTempToArray()
   else
   {
     arrayIndex = 0;
+    last24hoursTemps[arrayIndex] = tempMKint;
+    ++arrayIndex;
   }
 
-  for (int i = 0; i < 289; i++)
+  last24high = -200;
+  last24low = 200;
+
+  for (int i = 0; i < 288; i++)
   {
     if (last24hoursTemps[i] > last24high)
     {
@@ -326,5 +337,21 @@ void recordTempToArray()
     }
   }
 
+    if (tempMKint > dailyHigh)
+  {
+    dailyHigh = tempMKint;
+  }
+
+  if (tempMKint < dailyLow)
+  {
+    dailyLow = tempMKint;
+  }
+
   Blynk.setProperty(V31, "label", String("MBDRM ") + last24high + "/" + last24low);  // Sets label with high/low temps.
+}
+
+void resetHiLoTemps()
+{
+  dailyHigh = 0;     // Resets daily high temp
+  dailyLow = 200;    // Resets daily low temp
 }
