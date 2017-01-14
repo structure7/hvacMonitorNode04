@@ -5,7 +5,6 @@
 
 #include <SimpleTimer.h>
 #define BLYNK_PRINT Serial    // Comment this out to disable prints and save space
-#include <ESP8266WiFi.h>
 #include <BlynkSimpleEsp8266.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -20,10 +19,10 @@ DallasTemperature sensors(&oneWire);
 #include <WiFiUdp.h>            // Required for OTA
 #include <ArduinoOTA.h>         // Required for OTA
 
-float tempMK;              // Bedroom temp
+double tempMK;                  // Bedroom temp
 int tempMKint;
 bool phantSendFlag;
-double tstatTemp, atticTemp, keatonTemp, livTemp, outsideTemp, outsideTempPrev;
+double tempMKPrev, tstatTemp, tstatTempPrev, atticTemp, atticTempPrev, keatonTemp, keatonTempPrev, livTemp, livTempPrev, outsideTemp, outsideTempPrev;
 int atticTempError, tempMKError, keatonTempError, livTempError, outsideTempError, tstatTempError;
 
 int dailyHigh = 0;
@@ -46,7 +45,6 @@ char* privateKey = "privateKey";
 SimpleTimer timer;
 WidgetTerminal terminal(V26);     //Uptime reporting
 WidgetRTC rtc;
-BLYNK_ATTACH_WIDGET(rtc, V8);
 
 void setup()
 {
@@ -115,7 +113,7 @@ void loop()
     phantSendFlag = 0;
   }
 
-    if (hour() == 00 && minute() == 01)
+  if (hour() == 00 && minute() == 01)
   {
     timer.setTimeout(61000, resetHiLoTemps);
   }
@@ -228,16 +226,6 @@ BLYNK_WRITE(V6) {
 
 void sfSync4() {
   Blynk.syncVirtual(V12);
-
-  if (outsideTemp <= 0)
-  {
-    outsideTemp = outsideTempPrev;
-  }
-  else
-  {
-    outsideTempPrev = outsideTemp;
-  }
-
   timer.setTimeout(getWait, sfSync5);
 }
 
@@ -256,6 +244,72 @@ BLYNK_WRITE(V3) {
 
 void phantSend()
 {
+  // atticTemp
+  if (atticTemp <= 0)
+  {
+    atticTemp = atticTempPrev;
+    ++atticTempError;
+  }
+  else
+  {
+    atticTempPrev = atticTemp;
+  }
+
+  // outsideTemp
+  if (outsideTemp <= 0)
+  {
+    outsideTemp = outsideTempPrev;
+    ++outsideTempError;
+  }
+  else
+  {
+    outsideTempPrev = outsideTemp;
+  }
+
+  // tempMK
+  if (tempMK <= 0)
+  {
+    tempMK = tempMKPrev;
+    ++tempMKError;
+  }
+  else
+  {
+    tempMKError = tempMK;
+  }
+
+  // keatonTemp
+  if (keatonTemp <= 0)
+  {
+    keatonTemp = keatonTempPrev;
+    ++keatonTempError;
+  }
+  else
+  {
+    keatonTempPrev = keatonTemp;
+  }
+
+  // livTemp
+  if (livTemp <= 0)
+  {
+    livTemp = livTempPrev;
+    ++livTempError;
+  }
+  else
+  {
+    livTempPrev = livTemp;
+  }
+
+  // tstatTemp
+  if (tstatTemp <= 0)
+  {
+    tstatTemp = tstatTempPrev;
+    ++tstatTempError;
+  }
+  else
+  {
+    tstatTempPrev = tstatTemp;
+  }
+
   Serial.print("connecting to ");
   Serial.println(hostSF);
 
@@ -337,7 +391,7 @@ void recordHighLowTemps()
     }
   }
 
-    if (tempMKint > dailyHigh)
+  if (tempMKint > dailyHigh)
   {
     dailyHigh = tempMKint;
   }
