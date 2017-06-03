@@ -38,13 +38,14 @@ char auth[] = "fromBlynkApp";
 char ssid[] = "ssid";
 char pass[] = "pw";
 
-char* hostSF = "raspi";
+char* hostSF = "192.168.0.168";
 char* streamId   = "publicKey";
 char* privateKey = "privateKey";
 
 SimpleTimer timer;
 WidgetTerminal terminal(V26);     //Uptime reporting
 WidgetRTC rtc;
+WidgetBridge bridge1(V50);
 
 void setup()
 {
@@ -92,6 +93,7 @@ void setup()
 
   timer.setInterval(2000L, sendTemps);    // Temperature sensor polling interval
   timer.setInterval(1000L, uptimeReport);
+  timer.setInterval(30000, sendControlTemp);      // Sends temp to hvacMonitor via bridge for control
   timer.setInterval(300000L, recordHighLowTemps);  // Array updated ~5 minutes
   timer.setTimeout(5000, setupArray);             // Sets entire array to temp at startup for a "baseline"
 }
@@ -127,6 +129,14 @@ BLYNK_WRITE(V27) // App button to report uptime
   {
     timer.setTimeout(12000L, uptimeSend);
   }
+}
+
+void sendControlTemp() {
+  bridge1.virtualWrite(V127, 4, tempMK);    // Writing "4" for this node, then the temp.
+}
+
+BLYNK_CONNECTED() {
+  bridge1.setAuthToken("ed06ade587fc4dfea91fb114e08f2104"); // Place the AuthToken of the second hardware here
 }
 
 void uptimeSend()
